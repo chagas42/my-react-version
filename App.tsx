@@ -1,30 +1,44 @@
-import { Inter_400Regular, Inter_600SemiBold } from '@expo-google-fonts/inter';
-import AppLoading from 'expo-app-loading';
-import { useFonts } from 'expo-font';
-import { StatusBar } from 'expo-status-bar';
-import React from 'react';
-import { LogBox } from 'react-native';
-import { Home } from './src/pages/Home';
-import Routes from './src/routes';
 
-LogBox.ignoreLogs(["[react-native-gesture-handler] Seems like you\'re using an old API with gesture components, check out new Gestures system!","Warning: Can't perform a React state update on an unmounted component. This is a no-op, but it indicates a memory leak in your application. To fix, cancel all subscriptions and asynchronous tasks in a useEffect cleanup function."])
+import { UseEffectExample } from "./examples/UseEffectExample";
+import { UseStateExample } from "./examples/UseStateExample";
+import { KeyExample } from "./examples/KeyExample";
+import { FullExample } from "./examples/FullExample";
+import React from "./src/React";
 
-export default function App() {
+const examples = [
+  { title: "useState Example", example: UseStateExample, href: "useState" },
+  { title: "useEffect Example", example: UseEffectExample, href: "useEffect" },
+  { title: "Key Example", example: KeyExample, href: "key" },
+  { title: "Full Example", example: FullExample, href: "fullExample" }
+]
 
-  const [fontsLoaded ] = useFonts({
-    Inter_400Regular,
-    Inter_600SemiBold
-  });
-
-  if(!fontsLoaded) {
-    return <AppLoading />;
-  }
+export function App(props) {
+  const href = window.location.href.split("#")[1];
+  const example = examples.find(example => example.href === href) || examples[0];
+  const Example = example.example;
 
   return (
-    <>
-      <StatusBar style="light"/>
-      <Routes/>
-    </>
-  );
-}
+    <div style="display: flex; flex-direction: column; gap: 2rem; padding: 2rem;">
+      <h1>React Examples</h1>
+      <nav>
+        <ul
+          style="display: flex; gap: 1rem; padding: 0; margin: 0;"
+        >
+          {examples.map(example => (
+            <li
+              onClick={e => {
+                e.preventDefault();
+                window.location.href = `#${example.href}`;
+                window.location.reload();
+              }}
+            >{example.title}
+            </li>
+          ))}
+        </ul>
+      </nav>
 
+
+      <Example />
+    </div >
+  )
+}
