@@ -24,9 +24,6 @@ export function React() {
       );
     }
 
-    console.log(
-      `Current Node: ${currentNode.id}, Hook Index: ${currentNode.hookIndex}`)
-
     return currentNode;
   }
 
