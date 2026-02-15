@@ -59,12 +59,12 @@ function scheduleCallback({
   newTask.sortIndex = expirationTime;
 
   push(TASKQUEUE, newTask);
-
+  //TODO - Request host callback, schedule with browser another time to work
   return newTask;
 }
 
 function push(taskqueue: Array<Task>, task: Task) {
-  //precisamos verificar qual o mais recente
+  //TODO - IMPL MINIHEAP TREE
   taskqueue.push(task);
   taskqueue.sort((a, b) => a.sortIndex - b.sortIndex);
 }
