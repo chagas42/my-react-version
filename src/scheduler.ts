@@ -27,7 +27,11 @@ interface Task {
 const HIGH: PriorityLevel = 0;
 const LOW: PriorityLevel = 1;
 const NORMAL: PriorityLevel = 2;
+const FRAME_INTERVAL = 5;
+
+let LOGS = [];
 let taskIdCounter = 1;
+let startTimer = -1;
 
 const PRIORITY_TO_MS = {
   [HIGH]: -1,
@@ -37,6 +41,7 @@ const PRIORITY_TO_MS = {
 
 const TASKQUEUE: Array<Task> = [];
 
+//enfileira as tasks em ordem de prioridade.
 function scheduleCallback({
   priorityLevel,
   callback,
@@ -69,9 +74,77 @@ function push(taskqueue: Array<Task>, task: Task) {
   taskqueue.sort((a, b) => a.sortIndex - b.sortIndex);
 }
 
-scheduleCallback({ priorityLevel: LOW, callback: () => console.log("oi") });
-scheduleCallback({ priorityLevel: HIGH, callback: () => console.log("oi") });
-scheduleCallback({ priorityLevel: NORMAL, callback: () => console.log("oi") });
-scheduleCallback({ priorityLevel: LOW, callback: () => console.log("oi") });
+const NewTask = (name: string, ms: number) => {
+  return () => {
+    LOGS.push(`start ${name}`);
+    advanceTime(ms);
+    LOGS.push(`end ${name}`);
+  };
+};
 
-console.log({ TASKQUEUE });
+function advanceTime(ms: number) {
+  const deadline = performance.now() + ms;
+
+  while (performance.now() < deadline) {
+    console.log("advanceTime");
+  }
+}
+
+scheduleCallback({ priorityLevel: LOW, callback: NewTask("A", 100) });
+scheduleCallback({ priorityLevel: HIGH, callback: NewTask("B", 5) });
+
+function performWorkUntilDeadline() {
+  let currentTime = performance.now();
+  startTimer = currentTime;
+  let hasMoreWork = true;
+
+  try {
+    hasMoreWork = flushWork(currentTime);
+  } finally {
+    if (hasMoreWork) {
+      schedulePerformWorkUntilDeadline();
+    }
+  }
+}
+
+function workLoop(initialTimer: number): boolean {
+  let currentTask = TASKQUEUE[0];
+  let currentTime = initialTimer;
+
+  while (currentTask != null) {
+    if (currentTask.expiration > currentTime && shouldYeldToHost()) {
+      return true;
+    }
+
+    const callback = currentTask.callback;
+
+    callback();
+
+    TASKQUEUE.shift();
+    currentTime = performance.now();
+    currentTask = TASKQUEUE[0];
+  }
+
+  return false;
+}
+
+function flushWork(initialTimer: number): boolean {
+  try {
+    return workLoop(initialTimer);
+  } finally {
+  }
+}
+
+function schedulePerformWorkUntilDeadline() {
+  setImmediate(performWorkUntilDeadline);
+}
+
+function shouldYeldToHost() {
+  let timeElapsed = performance.now() - startTimer;
+
+  if (timeElapsed < FRAME_INTERVAL) {
+    return false;
+  }
+
+  return true;
+}
