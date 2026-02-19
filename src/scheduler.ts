@@ -1,11 +1,11 @@
-type PriorityLevel = 0 | 1 | 2;
+export type PriorityLevel = 0 | 1 | 2;
 
-interface scheduleCallbackProps {
+export interface scheduleCallbackProps {
   priorityLevel: PriorityLevel;
   callback: () => void;
 }
 
-interface Task {
+export interface Task {
   id: number;
   expiration: number;
   priorityLevel: PriorityLevel;
@@ -24,13 +24,14 @@ interface Task {
 //   sortIndex,
 // }
 
-const HIGH: PriorityLevel = 0;
-const LOW: PriorityLevel = 1;
-const NORMAL: PriorityLevel = 2;
+export const HIGH: PriorityLevel = 0;
+export const LOW: PriorityLevel = 1;
+export const NORMAL: PriorityLevel = 2;
 const FRAME_INTERVAL = 5;
 
 let LOGS = [];
 let taskIdCounter = 1;
+let isScheduleRunning = false;
 let startTimer = -1;
 
 const PRIORITY_TO_MS = {
@@ -42,7 +43,7 @@ const PRIORITY_TO_MS = {
 const TASKQUEUE: Array<Task> = [];
 
 //enfileira as tasks em ordem de prioridade.
-function scheduleCallback({
+export function scheduleCallback({
   priorityLevel,
   callback,
 }: scheduleCallbackProps): Task {
@@ -64,7 +65,10 @@ function scheduleCallback({
   newTask.sortIndex = expirationTime;
 
   push(TASKQUEUE, newTask);
-  //TODO - Request host callback, schedule with browser another time to work
+  if (!isScheduleRunning) {
+    isScheduleRunning = true;
+    schedulePerformWorkUntilDeadline();
+  }
   return newTask;
 }
 
@@ -103,6 +107,8 @@ function performWorkUntilDeadline() {
   } finally {
     if (hasMoreWork) {
       schedulePerformWorkUntilDeadline();
+    } else {
+      isScheduleRunning = false;
     }
   }
 }
@@ -118,9 +124,15 @@ function workLoop(initialTimer: number): boolean {
 
     const callback = currentTask.callback;
 
-    callback();
+    let continuationCallback = callback();
 
-    TASKQUEUE.shift();
+    if (typeof continuationCallback === "function") {
+      currentTask.callback = continuationCallback;
+      return true;
+    } else {
+      TASKQUEUE.shift();
+    }
+
     currentTime = performance.now();
     currentTask = TASKQUEUE[0];
   }
