@@ -58,6 +58,16 @@ export function createHostRootFiber(
   return root;
 }
 
+export function renderFiberRoot(
+  rootComponent: Component,
+  container: HTMLElement,
+): Fiber {
+  const root = createHostRootFiber(container, [rootComponent]);
+  renderFiberTree(root);
+  commitFiberTree(root);
+  return root;
+}
+
 export function createFiberFromElement(
   component: Component | Component[] | null | undefined,
   returnFiber: Fiber | null,
