@@ -205,6 +205,12 @@ export function reconcileChildren(
     previousFiber = newFiber;
     oldFiber = oldFiber?.sibling || null;
   }
+
+  while (oldFiber) {
+    oldFiber.flags.add("Deletion");
+    returnFiber.deletions.push(oldFiber);
+    oldFiber = oldFiber.sibling;
+  }
 }
 
 export function completeWork(fiber: Fiber): void {
