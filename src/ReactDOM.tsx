@@ -10,7 +10,6 @@ type VNode = {
   key?: string | number;
 };
 
-let counter = 0;
 function ReactDOM() {
   let _root: Component;
   let _container: HTMLElement;
@@ -24,7 +23,6 @@ function ReactDOM() {
     _container = container;
 
     const newTree = createVirtualTree(_root);
-
 
     if (newTree) renderToDOM(newTree, _currentTree, container);
 
@@ -43,11 +41,9 @@ const _ReactDOM = ReactDOM();
 export default _ReactDOM;
 
 function createVirtualTree(component: Component): VNode | null {
-
   if (!component) return null;
 
   if (isPrimitive(component)) {
-    // console.log(counter)
     return {
       type: "TEXT_ELEMENT",
       props: { nodeValue: component.toString() },
@@ -80,7 +76,7 @@ function createVirtualTree(component: Component): VNode | null {
     const componentId = React.generateComponentId(
       component.tag as SyncTag,
       component.props,
-      parentId
+      parentId,
     );
 
     React.enterComponent(componentId);
@@ -115,7 +111,7 @@ function createVirtualTree(component: Component): VNode | null {
     const componentId = React.generateComponentId(
       component.tag as SyncTag,
       component.props,
-      parentId
+      parentId,
     );
 
     React.enterComponent(componentId);
@@ -137,7 +133,7 @@ function createVirtualTree(component: Component): VNode | null {
 function renderToDOM(
   newvnode: VNode | null,
   oldvnode: VNode | null,
-  container: HTMLElement
+  container: HTMLElement,
 ): void {
   if (!newvnode) return;
 
@@ -151,7 +147,7 @@ function renderToDOM(
 
     if (newvnode.type === React.Fragment) {
       newvnode.children?.forEach((child, index) =>
-        renderToDOM(child, oldvnode?.children?.[index] || null, container)
+        renderToDOM(child, oldvnode?.children?.[index] || null, container),
       );
       return;
     }
@@ -165,7 +161,7 @@ function renderToDOM(
         renderToDOM(
           child,
           oldvnode?.children?.find((c) => c.key === child.key) || null,
-          domElement
+          domElement,
         );
       }
     }
@@ -217,7 +213,7 @@ function renderToDOM(
 function reconcileChildren(
   oldChildren: VNode[],
   newChildren: VNode[],
-  container: HTMLElement
+  container: HTMLElement,
 ): void {
   const oldChildrenMap: Map<string | number, VNode> = new Map();
   const oldChildrenWithoutKey: VNode[] = [];
@@ -264,7 +260,7 @@ function createDomElement(tag: string, props: Props): HTMLElement {
 function updateDomElement(
   element: HTMLElement,
   oldProps: Props,
-  newProps: Props
+  newProps: Props,
 ) {
   createOrUpdateDomElement(element, newProps, oldProps);
 }
@@ -272,7 +268,7 @@ function updateDomElement(
 function createOrUpdateDomElement(
   tag: string | HTMLElement,
   newProps: Props,
-  oldProps?: Props
+  oldProps?: Props,
 ): HTMLElement {
   const element =
     typeof tag === "string"
@@ -296,7 +292,7 @@ function createOrUpdateDomElement(
         key !== "style" &&
         key !== "className" &&
         !key.startsWith("on") &&
-        !(key in newProps)
+        !(key in newProps),
     )) {
       element.removeAttribute(key.toLowerCase());
     }
