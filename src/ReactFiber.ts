@@ -1,19 +1,26 @@
-type Fiber = {
+import { NORMAL, scheduleCallback } from "./scheduler";
+
+export type Lane = number;
+
+export type Fiber = {
   key: string;
   type: string;
-  lanes: number;
-  childLanes: number;
-
-  //parents
+  lanes: Lane;
+  childLanes: Lane;
   return: Fiber | null;
   child: Fiber | null;
   sibling: Fiber | null;
 };
 
-const NoLanes = 0;
-const SyncLane = 1;
+export const NoLanes = 0;
+export const SyncLane = 1;
 
-function createFiber(key, type, lanes = NoLanes, childLanes = NoLanes): Fiber {
+export function createFiber(
+  key: string,
+  type: string,
+  lanes: Lane = NoLanes,
+  childLanes: Lane = NoLanes,
+): Fiber {
   return {
     key,
     type,
@@ -25,50 +32,89 @@ function createFiber(key, type, lanes = NoLanes, childLanes = NoLanes): Fiber {
   };
 }
 
-const root = createFiber("root", "HostRoot", NoLanes, SyncLane);
-const app = createFiber("app", "App", NoLanes, NoLanes);
-const section = createFiber("section", "div", NoLanes, SyncLane);
-const button = createFiber("button", "button", SyncLane, NoLanes);
-const text = createFiber("text", "span", NoLanes, NoLanes);
+export function appendChild(parent: Fiber, child: Fiber): Fiber {
+  child.return = parent;
 
-root.child = app;
-app.return = root;
-app.child = section;
-section.return = app;
-section.child = button;
-button.return = section;
-button.sibling = text;
-text.return = section;
+  if (!parent.child) {
+    parent.child = child;
+    return child;
+  }
 
-const RENDERED_NODES = [];
+  let sibling = parent.child;
+  while (sibling.sibling) {
+    sibling = sibling.sibling;
+  }
 
-function beginWork(fiber: Fiber): Fiber {
+  sibling.sibling = child;
+  return child;
+}
+
+export function beginWork(fiber: Fiber): Fiber | null {
   if (fiber.lanes === NoLanes && fiber.childLanes === NoLanes) {
-    //bailout
     return null;
   }
 
-  RENDERED_NODES.push(fiber.key);
+  fiber.lanes = NoLanes;
   return fiber.child;
 }
 
-function workLoop(fiber: Fiber) {
-  let nextUnitOfWork = fiber;
-  while (nextUnitOfWork) {
-    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
-  }
+export function completeWork(fiber: Fiber): void {
+  fiber.childLanes = NoLanes;
 }
 
-function performUnitOfWork(fiber: Fiber): Fiber {
+export function performUnitOfWork(fiber: Fiber): Fiber | null {
   const next = beginWork(fiber);
 
   if (next) {
     return next;
   }
 
-  return fiber.sibling;
+  let current: Fiber | null = fiber;
+  while (current) {
+    completeWork(current);
+
+    if (current.sibling) {
+      return current.sibling;
+    }
+
+    current = current.return;
+  }
+
+  return null;
 }
 
-workLoop(root);
+export function workLoop(root: Fiber): void {
+  let nextUnitOfWork: Fiber | null = root;
 
-console.log(RENDERED_NODES);
+  while (nextUnitOfWork) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+  }
+}
+
+export function scheduleUpdateOnFiber(fiber: Fiber, lane: Lane = SyncLane) {
+  const root = markUpdateLaneFromFiberToRoot(fiber, lane);
+
+  scheduleCallback({
+    priorityLevel: NORMAL,
+    callback: () => workLoop(root),
+  });
+}
+
+function markUpdateLaneFromFiberToRoot(fiber: Fiber, lane: Lane): Fiber {
+  fiber.lanes = mergeLanes(fiber.lanes, lane);
+
+  let node = fiber;
+  let parent = node.return;
+
+  while (parent) {
+    parent.childLanes = mergeLanes(parent.childLanes, lane);
+    node = parent;
+    parent = node.return;
+  }
+
+  return node;
+}
+
+function mergeLanes(a: Lane, b: Lane): Lane {
+  return a | b;
+}

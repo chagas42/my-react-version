@@ -1,35 +1,25 @@
 export type PriorityLevel = 0 | 1 | 2;
+export type TaskCallback = () => TaskCallback | void;
 
-export interface scheduleCallbackProps {
+export type ScheduleCallbackProps = {
   priorityLevel: PriorityLevel;
-  callback: () => void;
-}
+  callback: TaskCallback;
+};
 
-export interface Task {
+export type Task = {
   id: number;
   expiration: number;
   priorityLevel: PriorityLevel;
-  callback: () => void;
+  callback: TaskCallback;
   startTime: number;
   sortIndex: number;
-}
-
-//PRECISO AGENDAR TASKS, COM AS SEGUINTES CARACTERISTICAS:
-// {
-//   id,
-//   expiration,
-//   priorityLevel,
-//   callback,
-//   startTime,
-//   sortIndex,
-// }
+};
 
 export const HIGH: PriorityLevel = 0;
 export const LOW: PriorityLevel = 1;
 export const NORMAL: PriorityLevel = 2;
 const FRAME_INTERVAL = 5;
 
-let LOGS = [];
 let taskIdCounter = 1;
 let isScheduleRunning = false;
 let startTimer = -1;
@@ -42,18 +32,17 @@ const PRIORITY_TO_MS = {
 
 const TASKQUEUE: Array<Task> = [];
 
-//enfileira as tasks em ordem de prioridade.
 export function scheduleCallback({
   priorityLevel,
   callback,
-}: scheduleCallbackProps): Task {
+}: ScheduleCallbackProps): Task {
   const currentTime = performance.now();
   const startTime = currentTime;
-  let timeout = PRIORITY_TO_MS[priorityLevel] || NORMAL;
+  const timeout = PRIORITY_TO_MS[priorityLevel] ?? PRIORITY_TO_MS[NORMAL];
 
-  let expirationTime = currentTime + timeout;
+  const expirationTime = currentTime + timeout;
 
-  let newTask: Task = {
+  const newTask: Task = {
     id: taskIdCounter++,
     expiration: expirationTime,
     callback,
@@ -73,32 +62,12 @@ export function scheduleCallback({
 }
 
 function push(taskqueue: Array<Task>, task: Task) {
-  //TODO - IMPL MINIHEAP TREE
   taskqueue.push(task);
   taskqueue.sort((a, b) => a.sortIndex - b.sortIndex);
 }
 
-const NewTask = (name: string, ms: number) => {
-  return () => {
-    LOGS.push(`start ${name}`);
-    advanceTime(ms);
-    LOGS.push(`end ${name}`);
-  };
-};
-
-function advanceTime(ms: number) {
-  const deadline = performance.now() + ms;
-
-  while (performance.now() < deadline) {
-    console.log("advanceTime");
-  }
-}
-
-scheduleCallback({ priorityLevel: LOW, callback: NewTask("A", 100) });
-scheduleCallback({ priorityLevel: HIGH, callback: NewTask("B", 5) });
-
 function performWorkUntilDeadline() {
-  let currentTime = performance.now();
+  const currentTime = performance.now();
   startTimer = currentTime;
   let hasMoreWork = true;
 
@@ -118,13 +87,13 @@ function workLoop(initialTimer: number): boolean {
   let currentTime = initialTimer;
 
   while (currentTask != null) {
-    if (currentTask.expiration > currentTime && shouldYeldToHost()) {
+    if (currentTask.expiration > currentTime && shouldYieldToHost()) {
       return true;
     }
 
     const callback = currentTask.callback;
 
-    let continuationCallback = callback();
+    const continuationCallback = callback();
 
     if (typeof continuationCallback === "function") {
       currentTask.callback = continuationCallback;
@@ -141,18 +110,15 @@ function workLoop(initialTimer: number): boolean {
 }
 
 function flushWork(initialTimer: number): boolean {
-  try {
-    return workLoop(initialTimer);
-  } finally {
-  }
+  return workLoop(initialTimer);
 }
 
 function schedulePerformWorkUntilDeadline() {
-  setImmediate(performWorkUntilDeadline);
+  setTimeout(performWorkUntilDeadline, 0);
 }
 
-function shouldYeldToHost() {
-  let timeElapsed = performance.now() - startTimer;
+function shouldYieldToHost() {
+  const timeElapsed = performance.now() - startTimer;
 
   if (timeElapsed < FRAME_INTERVAL) {
     return false;
