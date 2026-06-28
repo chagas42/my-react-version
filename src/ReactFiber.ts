@@ -279,8 +279,7 @@ export function commitFiberTree(root: Fiber): void {
   }
 
   commitDeletions(root.deletions);
-  root.stateNode.replaceChildren();
-  appendHostChildren(root.stateNode, root.child);
+  commitWork(root.child);
 }
 
 export function scheduleUpdateOnFiber(fiber: Fiber, lane: Lane = SyncLane) {
@@ -379,6 +378,47 @@ function commitDeletions(deletions: Fiber[]): void {
   for (const fiber of deletions) {
     commitDeletion(fiber);
   }
+}
+
+function commitWork(fiber: Fiber | null): void {
+  if (!fiber) return;
+
+  if (fiber.flags.has("Placement")) {
+    commitPlacement(fiber);
+  }
+
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}
+
+function commitPlacement(fiber: Fiber): void {
+  const parent = getHostParent(fiber);
+  if (!parent) return;
+
+  appendHostNode(parent, fiber);
+}
+
+function getHostParent(fiber: Fiber): HTMLElement | null {
+  let parent = fiber.return;
+
+  while (parent) {
+    if (parent.stateNode instanceof HTMLElement) {
+      return parent.stateNode;
+    }
+
+    parent = parent.return;
+  }
+
+  return null;
+}
+
+function appendHostNode(parent: HTMLElement, fiber: Fiber): void {
+  if (fiber.stateNode) {
+    parent.appendChild(fiber.stateNode);
+    return;
+  }
+
+  appendHostChildren(parent, fiber.child);
 }
 
 function commitDeletion(fiber: Fiber): void {
