@@ -195,12 +195,14 @@ export function completeWork(fiber: Fiber): void {
     );
   }
 
-  if (
+  const shouldCreateHostNode =
     fiber.tag === "HostComponent" &&
     !fiber.stateNode &&
-    typeof fiber.type === "string"
-  ) {
+    typeof fiber.type === "string";
+
+  if (shouldCreateHostNode && typeof fiber.type === "string") {
     fiber.stateNode = document.createElement(fiber.type);
+    setInitialHostProps(fiber.stateNode, fiber.pendingProps);
   }
 
   if (fiber.tag === "HostComponent" && fiber.stateNode instanceof HTMLElement) {
@@ -344,5 +346,62 @@ function appendHostChildren(parent: HTMLElement, child: Fiber | null): void {
     }
 
     node = node.sibling;
+  }
+}
+
+function setInitialHostProps(element: HTMLElement, props: Props): void {
+  for (const key of Object.keys(props)) {
+    const value = props[key];
+
+    if (
+      value == null ||
+      key === "children" ||
+      key === "__self" ||
+      key === "__source"
+    ) {
+      continue;
+    }
+
+    if (key === "className") {
+      element.className = value || "";
+      continue;
+    }
+
+    if (key === "style") {
+      setInitialStyle(element, value);
+      continue;
+    }
+
+    if (key === "ref" && typeof value === "object" && "current" in value) {
+      value.current = element;
+      continue;
+    }
+
+    if (key.startsWith("on") && typeof value === "function") {
+      element.addEventListener(key.toLowerCase().substring(2), value);
+      continue;
+    }
+
+    if (typeof value === "boolean") {
+      if (value) {
+        element.setAttribute(key.toLowerCase(), "");
+      }
+      continue;
+    }
+
+    element.setAttribute(key.toLowerCase(), value);
+  }
+}
+
+function setInitialStyle(element: HTMLElement, style: unknown): void {
+  if (typeof style === "string") {
+    element.style.cssText = style;
+    return;
+  }
+
+  if (!style || typeof style !== "object") return;
+
+  for (const key of Object.keys(style)) {
+    element.style[key] = style[key];
   }
 }
