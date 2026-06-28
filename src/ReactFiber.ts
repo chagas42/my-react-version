@@ -426,9 +426,22 @@ function appendHostNode(parent: HTMLElement, fiber: Fiber): void {
 }
 
 function commitUpdate(fiber: Fiber): void {
-  if (fiber.tag !== "HostText" || !(fiber.stateNode instanceof Text)) {
+  if (fiber.tag === "HostText" && fiber.stateNode instanceof Text) {
+    updateHostText(fiber);
     return;
   }
+
+  if (fiber.tag === "HostComponent" && fiber.stateNode instanceof HTMLElement) {
+    updateHostProps(
+      fiber.stateNode,
+      fiber.alternate?.memoizedProps || {},
+      fiber.pendingProps,
+    );
+  }
+}
+
+function updateHostText(fiber: Fiber): void {
+  if (!(fiber.stateNode instanceof Text)) return;
 
   const nextValue = fiber.pendingProps.nodeValue?.toString() || "";
 
@@ -492,6 +505,58 @@ function setInitialHostProps(element: HTMLElement, props: Props): void {
   }
 }
 
+function updateHostProps(
+  element: HTMLElement,
+  oldProps: Props,
+  newProps: Props,
+): void {
+  removeOldHostProps(element, oldProps, newProps);
+  setInitialHostProps(element, newProps);
+}
+
+function removeOldHostProps(
+  element: HTMLElement,
+  oldProps: Props,
+  newProps: Props,
+): void {
+  for (const key of Object.keys(oldProps)) {
+    const value = oldProps[key];
+
+    if (key === "children" || key === "__self" || key === "__source") {
+      continue;
+    }
+
+    if (key.startsWith("on") && typeof value === "function") {
+      element.removeEventListener(key.toLowerCase().substring(2), value);
+      continue;
+    }
+
+    if (key === "style") {
+      removeOldStyle(element, value, newProps.style);
+      continue;
+    }
+
+    if (key === "className" && newProps.className == null) {
+      element.className = "";
+      continue;
+    }
+
+    if (key === "ref" && typeof value === "object" && "current" in value) {
+      value.current = null;
+      continue;
+    }
+
+    if (typeof value === "boolean" && newProps[key] !== true) {
+      element.removeAttribute(key.toLowerCase());
+      continue;
+    }
+
+    if (!(key in newProps)) {
+      element.removeAttribute(key.toLowerCase());
+    }
+  }
+}
+
 function setInitialStyle(element: HTMLElement, style: unknown): void {
   if (typeof style === "string") {
     element.style.cssText = style;
@@ -502,6 +567,31 @@ function setInitialStyle(element: HTMLElement, style: unknown): void {
 
   for (const key of Object.keys(style)) {
     element.style[key] = style[key];
+  }
+}
+
+function removeOldStyle(
+  element: HTMLElement,
+  oldStyle: unknown,
+  newStyle: unknown,
+): void {
+  if (!newStyle) {
+    element.removeAttribute("style");
+    return;
+  }
+
+  if (
+    !oldStyle ||
+    typeof oldStyle !== "object" ||
+    typeof newStyle !== "object"
+  ) {
+    return;
+  }
+
+  for (const key of Object.keys(oldStyle)) {
+    if (!(key in newStyle)) {
+      element.style[key] = "";
+    }
   }
 }
 
