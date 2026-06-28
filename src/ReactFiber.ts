@@ -8,6 +8,7 @@ export type FiberTag =
   | "HostText"
   | "FunctionComponent"
   | "Fragment";
+export type EffectFlag = "Placement" | "Update" | "Deletion";
 
 export type Fiber = {
   tag: FiberTag;
@@ -19,6 +20,8 @@ export type Fiber = {
   memoizedProps: Props | null;
   stateNode: HTMLElement | Text | null;
   alternate: Fiber | null;
+  flags: Set<EffectFlag>;
+  deletions: Fiber[];
   return: Fiber | null;
   child: Fiber | null;
   sibling: Fiber | null;
@@ -43,6 +46,8 @@ export function createFiber(
     memoizedProps: null,
     stateNode: null,
     alternate: null,
+    flags: new Set(),
+    deletions: [],
     return: null,
     child: null,
     sibling: null,
@@ -122,6 +127,8 @@ export function createWorkInProgress(
     workInProgress.pendingProps = pendingProps;
     workInProgress.child = null;
     workInProgress.sibling = null;
+    workInProgress.flags.clear();
+    workInProgress.deletions = [];
   }
 
   workInProgress.lanes = current.lanes;
@@ -157,6 +164,8 @@ export function beginWork(fiber: Fiber): Fiber | null {
   }
 
   fiber.lanes = NoLanes;
+  fiber.flags.clear();
+  fiber.deletions = [];
 
   if (fiber.tag === "FunctionComponent") {
     updateFunctionComponent(fiber);
@@ -177,6 +186,7 @@ export function reconcileChildren(
   for (const child of children) {
     const newFiber = createFiberFromElement(child, returnFiber);
     if (!newFiber) continue;
+    newFiber.flags.add("Placement");
 
     if (!previousFiber) {
       returnFiber.child = newFiber;
