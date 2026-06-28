@@ -278,6 +278,7 @@ export function commitFiberTree(root: Fiber): void {
     return;
   }
 
+  commitDeletions(root.deletions);
   root.stateNode.replaceChildren();
   appendHostChildren(root.stateNode, root.child);
 }
@@ -371,6 +372,23 @@ function appendHostChildren(parent: HTMLElement, child: Fiber | null): void {
     }
 
     node = node.sibling;
+  }
+}
+
+function commitDeletions(deletions: Fiber[]): void {
+  for (const fiber of deletions) {
+    commitDeletion(fiber);
+  }
+}
+
+function commitDeletion(fiber: Fiber): void {
+  if (fiber.stateNode?.parentNode) {
+    fiber.stateNode.parentNode.removeChild(fiber.stateNode);
+    return;
+  }
+
+  if (fiber.child) {
+    commitDeletion(fiber.child);
   }
 }
 
