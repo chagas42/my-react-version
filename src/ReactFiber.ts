@@ -181,12 +181,20 @@ export function reconcileChildren(
   children: Component[],
 ): void {
   let previousFiber: Fiber | null = null;
+  let oldFiber = returnFiber.alternate?.child || null;
   returnFiber.child = null;
 
   for (const child of children) {
-    const newFiber = createFiberFromElement(child, returnFiber);
+    let newFiber = createFiberFromElement(child, returnFiber);
     if (!newFiber) continue;
-    newFiber.flags.add("Placement");
+
+    if (oldFiber && canReuseFiber(oldFiber, newFiber)) {
+      newFiber = createWorkInProgress(oldFiber, newFiber.pendingProps);
+      newFiber.return = returnFiber;
+      newFiber.flags.add("Update");
+    } else {
+      newFiber.flags.add("Placement");
+    }
 
     if (!previousFiber) {
       returnFiber.child = newFiber;
@@ -195,6 +203,7 @@ export function reconcileChildren(
     }
 
     previousFiber = newFiber;
+    oldFiber = oldFiber?.sibling || null;
   }
 }
 
@@ -414,4 +423,8 @@ function setInitialStyle(element: HTMLElement, style: unknown): void {
   for (const key of Object.keys(style)) {
     element.style[key] = style[key];
   }
+}
+
+function canReuseFiber(current: Fiber, next: Fiber): boolean {
+  return current.type === next.type && current.key === next.key;
 }
