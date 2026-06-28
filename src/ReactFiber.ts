@@ -387,6 +387,10 @@ function commitWork(fiber: Fiber | null): void {
     commitPlacement(fiber);
   }
 
+  if (fiber.flags.has("Update")) {
+    commitUpdate(fiber);
+  }
+
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
@@ -419,6 +423,18 @@ function appendHostNode(parent: HTMLElement, fiber: Fiber): void {
   }
 
   appendHostChildren(parent, fiber.child);
+}
+
+function commitUpdate(fiber: Fiber): void {
+  if (fiber.tag !== "HostText" || !(fiber.stateNode instanceof Text)) {
+    return;
+  }
+
+  const nextValue = fiber.pendingProps.nodeValue?.toString() || "";
+
+  if (fiber.stateNode.nodeValue !== nextValue) {
+    fiber.stateNode.nodeValue = nextValue;
+  }
 }
 
 function commitDeletion(fiber: Fiber): void {
