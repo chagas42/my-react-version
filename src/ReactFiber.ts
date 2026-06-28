@@ -193,6 +193,10 @@ export function completeWork(fiber: Fiber): void {
     fiber.stateNode = document.createElement(fiber.type);
   }
 
+  if (fiber.tag === "HostComponent" && fiber.stateNode instanceof HTMLElement) {
+    appendHostChildren(fiber.stateNode, fiber.child);
+  }
+
   fiber.memoizedProps = fiber.pendingProps;
   fiber.childLanes = NoLanes;
 }
@@ -230,6 +234,15 @@ export function renderFiberTree(root: Fiber): Fiber {
   root.lanes = mergeLanes(root.lanes, SyncLane);
   workLoop(root);
   return root;
+}
+
+export function commitFiberTree(root: Fiber): void {
+  if (root.tag !== "HostRoot" || !(root.stateNode instanceof HTMLElement)) {
+    return;
+  }
+
+  root.stateNode.replaceChildren();
+  appendHostChildren(root.stateNode, root.child);
 }
 
 export function scheduleUpdateOnFiber(fiber: Fiber, lane: Lane = SyncLane) {
@@ -308,4 +321,18 @@ function normalizeChildren(
   if (Array.isArray(children)) return children;
 
   return [children];
+}
+
+function appendHostChildren(parent: HTMLElement, child: Fiber | null): void {
+  let node = child;
+
+  while (node) {
+    if (node.stateNode) {
+      parent.appendChild(node.stateNode);
+    } else if (node.child) {
+      appendHostChildren(parent, node.child);
+    }
+
+    node = node.sibling;
+  }
 }
