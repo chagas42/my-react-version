@@ -179,6 +179,20 @@ export function reconcileChildren(
 }
 
 export function completeWork(fiber: Fiber): void {
+  if (fiber.tag === "HostText" && !fiber.stateNode) {
+    fiber.stateNode = document.createTextNode(
+      fiber.pendingProps.nodeValue?.toString() || "",
+    );
+  }
+
+  if (
+    fiber.tag === "HostComponent" &&
+    !fiber.stateNode &&
+    typeof fiber.type === "string"
+  ) {
+    fiber.stateNode = document.createElement(fiber.type);
+  }
+
   fiber.memoizedProps = fiber.pendingProps;
   fiber.childLanes = NoLanes;
 }
