@@ -1,12 +1,24 @@
 import { NORMAL, scheduleCallback } from "./scheduler";
+import type { Component, Props } from "./types";
 
 export type Lane = number;
+export type FiberTag =
+  | "HostRoot"
+  | "HostComponent"
+  | "HostText"
+  | "FunctionComponent"
+  | "Fragment";
 
 export type Fiber = {
-  key: string;
-  type: string;
+  tag: FiberTag;
+  type: unknown;
+  key?: string | number;
   lanes: Lane;
   childLanes: Lane;
+  pendingProps: Props;
+  memoizedProps: Props | null;
+  stateNode: HTMLElement | Text | null;
+  alternate: Fiber | null;
   return: Fiber | null;
   child: Fiber | null;
   sibling: Fiber | null;
@@ -16,20 +28,97 @@ export const NoLanes = 0;
 export const SyncLane = 1;
 
 export function createFiber(
-  key: string,
-  type: string,
-  lanes: Lane = NoLanes,
-  childLanes: Lane = NoLanes,
+  tag: FiberTag,
+  type: unknown,
+  pendingProps: Props = {},
+  key?: string | number,
 ): Fiber {
   return {
-    key,
+    tag,
     type,
-    lanes,
-    childLanes,
+    key,
+    lanes: NoLanes,
+    childLanes: NoLanes,
+    pendingProps,
+    memoizedProps: null,
+    stateNode: null,
+    alternate: null,
     return: null,
     child: null,
     sibling: null,
   };
+}
+
+export function createHostRootFiber(
+  container: HTMLElement,
+  children: Component[],
+): Fiber {
+  const root = createFiber("HostRoot", null, { children });
+  root.stateNode = container;
+  return root;
+}
+
+export function createFiberFromElement(
+  component: Component | Component[] | null | undefined,
+  returnFiber: Fiber | null,
+): Fiber | null {
+  if (component === null || component === undefined) return null;
+
+  if (typeof component === "string" || typeof component === "number") {
+    const fiber = createFiber("HostText", "TEXT_ELEMENT", {
+      nodeValue: component.toString(),
+    });
+    fiber.return = returnFiber;
+    return fiber;
+  }
+
+  if (Array.isArray(component)) {
+    const fiber = createFiber("Fragment", Symbol.for("react.fragment"), {
+      children: component,
+    });
+    fiber.return = returnFiber;
+    return fiber;
+  }
+
+  const props = component.props || {};
+  const key = props.key;
+  const tag =
+    typeof component.tag === "function" ? "FunctionComponent" : "HostComponent";
+  const fiber = createFiber(tag, component.tag, props, key);
+  fiber.return = returnFiber;
+  return fiber;
+}
+
+export function createWorkInProgress(
+  current: Fiber | null,
+  pendingProps: Props,
+): Fiber {
+  if (!current) {
+    return createFiber("HostRoot", null, pendingProps);
+  }
+
+  let workInProgress = current.alternate;
+
+  if (!workInProgress) {
+    workInProgress = createFiber(
+      current.tag,
+      current.type,
+      pendingProps,
+      current.key,
+    );
+    workInProgress.stateNode = current.stateNode;
+    workInProgress.alternate = current;
+    current.alternate = workInProgress;
+  } else {
+    workInProgress.pendingProps = pendingProps;
+    workInProgress.child = null;
+    workInProgress.sibling = null;
+  }
+
+  workInProgress.lanes = current.lanes;
+  workInProgress.childLanes = current.childLanes;
+  workInProgress.memoizedProps = current.memoizedProps;
+  return workInProgress;
 }
 
 export function appendChild(parent: Fiber, child: Fiber): Fiber {
@@ -59,6 +148,7 @@ export function beginWork(fiber: Fiber): Fiber | null {
 }
 
 export function completeWork(fiber: Fiber): void {
+  fiber.memoizedProps = fiber.pendingProps;
   fiber.childLanes = NoLanes;
 }
 
