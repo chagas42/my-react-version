@@ -82,8 +82,7 @@ export function createFiberFromElement(
 
   const props = component.props || {};
   const key = props.key;
-  const tag =
-    typeof component.tag === "function" ? "FunctionComponent" : "HostComponent";
+  const tag = getFiberTag(component.tag, props);
   const fiber = createFiber(tag, component.tag, props, key);
   fiber.return = returnFiber;
   return fiber;
@@ -144,7 +143,29 @@ export function beginWork(fiber: Fiber): Fiber | null {
   }
 
   fiber.lanes = NoLanes;
+  reconcileChildren(fiber, getFiberChildren(fiber));
   return fiber.child;
+}
+
+export function reconcileChildren(
+  returnFiber: Fiber,
+  children: Component[],
+): void {
+  let previousFiber: Fiber | null = null;
+  returnFiber.child = null;
+
+  for (const child of children) {
+    const newFiber = createFiberFromElement(child, returnFiber);
+    if (!newFiber) continue;
+
+    if (!previousFiber) {
+      returnFiber.child = newFiber;
+    } else {
+      previousFiber.sibling = newFiber;
+    }
+
+    previousFiber = newFiber;
+  }
 }
 
 export function completeWork(fiber: Fiber): void {
@@ -207,4 +228,33 @@ function markUpdateLaneFromFiberToRoot(fiber: Fiber, lane: Lane): Fiber {
 
 function mergeLanes(a: Lane, b: Lane): Lane {
   return a | b;
+}
+
+function getFiberTag(type: unknown, props: Props): FiberTag {
+  if (type === undefined && props.children) {
+    return "Fragment";
+  }
+
+  if (typeof type === "function") {
+    return "FunctionComponent";
+  }
+
+  return "HostComponent";
+}
+
+function getFiberChildren(fiber: Fiber): Component[] {
+  if (
+    fiber.tag !== "HostRoot" &&
+    fiber.tag !== "HostComponent" &&
+    fiber.tag !== "Fragment"
+  ) {
+    return [];
+  }
+
+  const children = fiber.pendingProps.children;
+
+  if (!children) return [];
+  if (Array.isArray(children)) return children;
+
+  return [children];
 }
