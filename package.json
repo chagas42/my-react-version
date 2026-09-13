@@ -3,10 +3,12 @@
   "version": "0.0.1",
   "description": "",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "dev": "parcel index.html --open",
     "ssr": "parcel src/ssr.tsx --port 4000",
-    "react": "parcel index.tsx --port 3000"
+    "react": "parcel index.tsx --port 3000",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -19,8 +21,11 @@
   "devDependencies": {
     "buffer": "^6.0.3",
     "events": "^3.3.0",
+    "happy-dom": "^20.14.5",
     "process": "^0.11.10",
     "stream-http": "^3.2.0",
-    "url": "^0.11.3"
+    "url": "^0.11.3",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
   }
 }
