@@ -8,6 +8,7 @@ export type FiberTag =
   | "HostText"
   | "FunctionComponent"
   | "Fragment";
+export type EffectFlag = "Placement" | "Update" | "Deletion";
 
 export type Fiber = {
   tag: FiberTag;
@@ -19,6 +20,8 @@ export type Fiber = {
   memoizedProps: Props | null;
   stateNode: HTMLElement | Text | null;
   alternate: Fiber | null;
+  flags: Set<EffectFlag>;
+  deletions: Fiber[];
   return: Fiber | null;
   child: Fiber | null;
   sibling: Fiber | null;
@@ -43,6 +46,8 @@ export function createFiber(
     memoizedProps: null,
     stateNode: null,
     alternate: null,
+    flags: new Set(),
+    deletions: [],
     return: null,
     child: null,
     sibling: null,
@@ -55,6 +60,16 @@ export function createHostRootFiber(
 ): Fiber {
   const root = createFiber("HostRoot", null, { children });
   root.stateNode = container;
+  return root;
+}
+
+export function renderFiberRoot(
+  rootComponent: Component,
+  container: HTMLElement,
+): Fiber {
+  const root = createHostRootFiber(container, [rootComponent]);
+  renderFiberTree(root);
+  commitFiberTree(root);
   return root;
 }
 
@@ -112,6 +127,8 @@ export function createWorkInProgress(
     workInProgress.pendingProps = pendingProps;
     workInProgress.child = null;
     workInProgress.sibling = null;
+    workInProgress.flags.clear();
+    workInProgress.deletions = [];
   }
 
   workInProgress.lanes = current.lanes;
@@ -147,6 +164,8 @@ export function beginWork(fiber: Fiber): Fiber | null {
   }
 
   fiber.lanes = NoLanes;
+  fiber.flags.clear();
+  fiber.deletions = [];
 
   if (fiber.tag === "FunctionComponent") {
     updateFunctionComponent(fiber);
@@ -167,6 +186,7 @@ export function reconcileChildren(
   for (const child of children) {
     const newFiber = createFiberFromElement(child, returnFiber);
     if (!newFiber) continue;
+    newFiber.flags.add("Placement");
 
     if (!previousFiber) {
       returnFiber.child = newFiber;
@@ -179,6 +199,26 @@ export function reconcileChildren(
 }
 
 export function completeWork(fiber: Fiber): void {
+  if (fiber.tag === "HostText" && !fiber.stateNode) {
+    fiber.stateNode = document.createTextNode(
+      fiber.pendingProps.nodeValue?.toString() || "",
+    );
+  }
+
+  const shouldCreateHostNode =
+    fiber.tag === "HostComponent" &&
+    !fiber.stateNode &&
+    typeof fiber.type === "string";
+
+  if (shouldCreateHostNode && typeof fiber.type === "string") {
+    fiber.stateNode = document.createElement(fiber.type);
+    setInitialHostProps(fiber.stateNode, fiber.pendingProps);
+  }
+
+  if (fiber.tag === "HostComponent" && fiber.stateNode instanceof HTMLElement) {
+    appendHostChildren(fiber.stateNode, fiber.child);
+  }
+
   fiber.memoizedProps = fiber.pendingProps;
   fiber.childLanes = NoLanes;
 }
@@ -216,6 +256,15 @@ export function renderFiberTree(root: Fiber): Fiber {
   root.lanes = mergeLanes(root.lanes, SyncLane);
   workLoop(root);
   return root;
+}
+
+export function commitFiberTree(root: Fiber): void {
+  if (root.tag !== "HostRoot" || !(root.stateNode instanceof HTMLElement)) {
+    return;
+  }
+
+  root.stateNode.replaceChildren();
+  appendHostChildren(root.stateNode, root.child);
 }
 
 export function scheduleUpdateOnFiber(fiber: Fiber, lane: Lane = SyncLane) {
@@ -294,4 +343,75 @@ function normalizeChildren(
   if (Array.isArray(children)) return children;
 
   return [children];
+}
+
+function appendHostChildren(parent: HTMLElement, child: Fiber | null): void {
+  let node = child;
+
+  while (node) {
+    if (node.stateNode) {
+      parent.appendChild(node.stateNode);
+    } else if (node.child) {
+      appendHostChildren(parent, node.child);
+    }
+
+    node = node.sibling;
+  }
+}
+
+function setInitialHostProps(element: HTMLElement, props: Props): void {
+  for (const key of Object.keys(props)) {
+    const value = props[key];
+
+    if (
+      value == null ||
+      key === "children" ||
+      key === "__self" ||
+      key === "__source"
+    ) {
+      continue;
+    }
+
+    if (key === "className") {
+      element.className = value || "";
+      continue;
+    }
+
+    if (key === "style") {
+      setInitialStyle(element, value);
+      continue;
+    }
+
+    if (key === "ref" && typeof value === "object" && "current" in value) {
+      value.current = element;
+      continue;
+    }
+
+    if (key.startsWith("on") && typeof value === "function") {
+      element.addEventListener(key.toLowerCase().substring(2), value);
+      continue;
+    }
+
+    if (typeof value === "boolean") {
+      if (value) {
+        element.setAttribute(key.toLowerCase(), "");
+      }
+      continue;
+    }
+
+    element.setAttribute(key.toLowerCase(), value);
+  }
+}
+
+function setInitialStyle(element: HTMLElement, style: unknown): void {
+  if (typeof style === "string") {
+    element.style.cssText = style;
+    return;
+  }
+
+  if (!style || typeof style !== "object") return;
+
+  for (const key of Object.keys(style)) {
+    element.style[key] = style[key];
+  }
 }

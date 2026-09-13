@@ -1,6 +1,8 @@
 import React from "./React";
+import { renderFiberRoot } from "./ReactFiber";
 import { isFragment, isPrimitive, isSuspenseComponent } from "./helpers";
 import type { Component, Props, SyncTag } from "./types";
+import type { Fiber } from "./ReactFiber";
 
 type VNode = {
   type: string | ((props: unknown) => unknown) | symbol;
@@ -14,6 +16,7 @@ function ReactDOM() {
   let _root: Component;
   let _container: HTMLElement;
   let _currentTree: VNode | null = null;
+  let _fiberRoot: Fiber | null = null;
 
   function renderRoot(root: Component, container: HTMLElement) {
     if (!root) throw new Error("No root component provided");
@@ -31,8 +34,19 @@ function ReactDOM() {
 
   const rerender = () => renderRoot(_root, _container);
 
+  function renderRootWithFiber(root: Component, container: HTMLElement) {
+    if (!root) throw new Error("No root component provided");
+
+    _root = root;
+    _container = container;
+    _fiberRoot = renderFiberRoot(root, container);
+
+    return _fiberRoot;
+  }
+
   return {
     renderRoot,
+    renderRootWithFiber,
     rerender,
   };
 }
