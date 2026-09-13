@@ -1,4 +1,3 @@
-import { NORMAL, scheduleCallback } from "./scheduler";
 import type { Component, Props } from "./types";
 
 export type Lane = number;
@@ -66,8 +65,17 @@ export function createHostRootFiber(
 export function renderFiberRoot(
   rootComponent: Component,
   container: HTMLElement,
+  previous: Fiber | null = null,
 ): Fiber {
-  const root = createHostRootFiber(container, [rootComponent]);
+  // Reusar o root da render anterior é o que dá um alternate a cada fiber —
+  // sem isso toda render é a primeira, nada é reconciliado e o container
+  // acumula uma árvore nova por cima da outra.
+  const root = previous
+    ? createWorkInProgress(previous, { children: [rootComponent] })
+    : createHostRootFiber(container, [rootComponent]);
+
+  root.stateNode = container;
+
   renderFiberTree(root);
   commitFiberTree(root);
   return root;
@@ -361,13 +369,23 @@ export function commitFiberTree(root: Fiber): void {
   commitWork(root.child);
 }
 
+/**
+ * Ponto de entrada de uma atualização vinda de dentro da árvore — um setState.
+ *
+ * Marca a lane do fiber até o root, monta a work-in-progress a partir dele e
+ * renderiza. As lanes são o que faz o bailout pular tudo que não está no
+ * caminho: só quem foi marcado, e os ancestrais dele, são reprocessados.
+ *
+ * Síncrono por enquanto; ceder o controle ao scheduler vem depois.
+ */
 export function scheduleUpdateOnFiber(fiber: Fiber, lane: Lane = SyncLane) {
-  const root = markUpdateLaneFromFiberToRoot(fiber, lane);
+  const current = markUpdateLaneFromFiberToRoot(fiber, lane);
+  const root = createWorkInProgress(current, current.pendingProps);
+  root.stateNode = current.stateNode;
 
-  scheduleCallback({
-    priorityLevel: NORMAL,
-    callback: () => workLoop(root),
-  });
+  renderFiberTree(root);
+  commitFiberTree(root);
+  return root;
 }
 
 function markUpdateLaneFromFiberToRoot(fiber: Fiber, lane: Lane): Fiber {
@@ -469,6 +487,11 @@ function commitWork(fiber: Fiber | null): void {
   if (fiber.flags.has("Update")) {
     commitUpdate(fiber);
   }
+
+  // flags são consumidas pelo commit. um fiber pulado por bailout é
+  // compartilhado entre as duas árvores; sem limpar, ele seria recommitado na
+  // render seguinte e o nó reinserido no DOM.
+  fiber.flags.clear();
 
   commitWork(fiber.child);
   commitWork(fiber.sibling);

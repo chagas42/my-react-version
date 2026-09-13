@@ -123,6 +123,27 @@ describe("paridade entre os reconcilers", () => {
     expect(fiber).toBe(legacy);
   });
 
+  it("re-render no mesmo container não duplica a árvore", () => {
+    const fiber = document.createElement("div");
+
+    ReactDOM.renderRootWithFiber((<p>um</p>) as never, fiber);
+    ReactDOM.renderRootWithFiber((<p>dois</p>) as never, fiber);
+
+    expect(fiber.children.length).toBe(1);
+    expect(fiber.textContent).toBe("dois");
+  });
+
+  it("re-render mantém o mesmo nó de DOM", () => {
+    const fiber = document.createElement("div");
+
+    ReactDOM.renderRootWithFiber((<p>um</p>) as never, fiber);
+    const antes = fiber.firstElementChild;
+
+    ReactDOM.renderRootWithFiber((<p>dois</p>) as never, fiber);
+
+    expect(fiber.firstElementChild).toBe(antes);
+  });
+
   it("liga handlers de evento", () => {
     let cliques = 0;
     const fiberContainer = document.createElement("div");

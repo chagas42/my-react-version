@@ -39,7 +39,9 @@ function ReactDOM() {
 
     _root = root;
     _container = container;
-    _fiberRoot = renderFiberRoot(root, container);
+    // passa o root anterior: é dele que sai o alternate de cada fiber, e sem
+    // alternate toda render seria a primeira.
+    _fiberRoot = renderFiberRoot(root, container, _fiberRoot);
 
     return _fiberRoot;
   }
