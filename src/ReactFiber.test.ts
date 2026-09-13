@@ -5,6 +5,7 @@ import {
   SyncLane,
   createFiber,
   createHostRootFiber,
+  commitFiberTree,
   createWorkInProgress,
   renderFiberRoot,
   renderFiberTree,
@@ -237,6 +238,49 @@ describe("reconciliação por key", () => {
     const { first, second } = renderTwice([1, 2, 3], [3, 1, 2]);
 
     expect(filhos(second)[0].stateNode).toBe(filhos(first)[2].stateNode);
+  });
+
+  /** Render + commit duas vezes no mesmo container, como uma re-render real. */
+  function commitTwice(primeira: number[], segunda: number[]) {
+    const container = document.createElement("div");
+
+    const first = createHostRootFiber(container, lista(primeira));
+    renderFiberTree(first);
+    commitFiberTree(first);
+    const antes = [...container.children];
+
+    const second = createWorkInProgress(first, { children: lista(segunda) });
+    second.stateNode = container;
+    renderFiberTree(second);
+    commitFiberTree(second);
+
+    return { container, antes };
+  }
+
+  it("move os nós para a nova ordem no DOM", () => {
+    const { container } = commitTwice([1, 2, 3], [3, 1, 2]);
+
+    expect(container.textContent).toBe("item 3item 1item 2");
+  });
+
+  it("move o nó em vez de recriá-lo", () => {
+    const { container, antes } = commitTwice([1, 2, 3], [3, 1, 2]);
+
+    // o <li> da key 3 é o mesmo objeto de antes, só mudou de posição
+    expect(container.children[0]).toBe(antes[2]);
+  });
+
+  it("insere no meio sem jogar para o fim", () => {
+    const { container } = commitTwice([1, 3], [1, 2, 3]);
+
+    expect(container.textContent).toBe("item 1item 2item 3");
+  });
+
+  it("tira do DOM quem saiu da lista", () => {
+    const { container } = commitTwice([1, 2, 3], [1, 3]);
+
+    expect(container.children.length).toBe(2);
+    expect(container.textContent).toBe("item 1item 3");
   });
 
   it("marca Placement só em quem é novo", () => {
