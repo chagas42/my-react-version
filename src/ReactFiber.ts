@@ -154,13 +154,51 @@ export function appendChild(parent: Fiber, child: Fiber): Fiber {
   return child;
 }
 
+/**
+ * Recria os filhos do fiber a partir do alternate, sem reprocessá-los.
+ *
+ * É o que permite pular um fiber sem perder o que está abaixo dele: a subárvore
+ * entra na work-in-progress tree já pronta, e a fase de commit continua achando
+ * os nós. Sem isso, pular um fiber some com tudo que ele contém.
+ */
+function cloneChildFibers(fiber: Fiber): void {
+  const current = fiber.alternate;
+  if (!current?.child) return;
+
+  let child: Fiber | null = current.child;
+  let previous: Fiber | null = null;
+
+  while (child) {
+    const clone = createWorkInProgress(child, child.pendingProps);
+    clone.return = fiber;
+
+    if (previous) {
+      previous.sibling = clone;
+    } else {
+      fiber.child = clone;
+    }
+
+    previous = clone;
+    child = child.sibling;
+  }
+}
+
 export function beginWork(fiber: Fiber): Fiber | null {
-  if (
-    fiber.alternate &&
-    fiber.lanes === NoLanes &&
-    fiber.childLanes === NoLanes
-  ) {
-    return null;
+  // props novos significam trabalho real, mesmo sem lane marcada. o JSX cria um
+  // objeto por render, então isto só é verdade quando o pai reusou os props —
+  // que é exatamente quando dá para pular.
+  const sameProps = fiber.alternate?.memoizedProps === fiber.pendingProps;
+
+  if (fiber.alternate && sameProps && fiber.lanes === NoLanes) {
+    // nada a fazer neste fiber. se também não há trabalho abaixo, a subárvore
+    // inteira fica como está; senão, clona os filhos e desce até quem tem.
+    if (fiber.childLanes === NoLanes) {
+      fiber.child = fiber.alternate.child;
+      return null;
+    }
+
+    cloneChildFibers(fiber);
+    return fiber.child;
   }
 
   fiber.lanes = NoLanes;
