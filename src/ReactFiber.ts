@@ -225,9 +225,13 @@ export function reconcileChildren(
   // key 3 é reencontrado mesmo tendo saído do fim para o começo.
   const byKey = new Map<string | number, Fiber>();
   const byPosition: Fiber[] = [];
+  const oldIndex = new Map<Fiber, number>();
 
   let oldFiber = returnFiber.alternate?.child ?? null;
+  let index = 0;
   while (oldFiber) {
+    oldIndex.set(oldFiber, index++);
+
     if (oldFiber.key != null) {
       byKey.set(oldFiber.key, oldFiber);
     } else {
@@ -239,6 +243,9 @@ export function reconcileChildren(
   const reused = new Set<Fiber>();
   let previousFiber: Fiber | null = null;
   let position = 0;
+  // maior posição antiga já colocada. quem vinha de antes dela andou para
+  // frente na lista e precisa ser movido no DOM, não só atualizado.
+  let lastPlaced = -1;
 
   returnFiber.child = null;
 
@@ -256,6 +263,13 @@ export function reconcileChildren(
       newFiber.return = returnFiber;
       newFiber.flags.add("Update");
       reused.add(candidate);
+
+      const previousIndex = oldIndex.get(candidate) ?? 0;
+      if (previousIndex < lastPlaced) {
+        newFiber.flags.add("Placement");
+      } else {
+        lastPlaced = previousIndex;
+      }
     } else {
       newFiber.flags.add("Placement");
     }
@@ -460,11 +474,67 @@ function commitWork(fiber: Fiber | null): void {
   commitWork(fiber.sibling);
 }
 
+/**
+ * O primeiro nó de DOM depois deste fiber que já está no lugar certo.
+ *
+ * É a âncora do insertBefore. Sem ela todo insert vira append e o nó vai parar
+ * no fim da lista, mesmo quando devia entrar no meio. Fibers marcados com
+ * Placement são pulados: eles próprios ainda vão se mover, então não servem
+ * de referência.
+ */
+function getHostSibling(fiber: Fiber): HTMLElement | Text | null {
+  let node: Fiber | null = fiber;
+
+  while (node) {
+    // sobe até achar um irmão, parando no host parent
+    while (!node.sibling) {
+      node = node.return;
+      if (!node || node.stateNode instanceof HTMLElement) return null;
+    }
+
+    node = node.sibling;
+
+    // desce por componentes sem nó próprio até um host fiber
+    while (node && !node.stateNode) {
+      if (node.flags.has("Placement")) break;
+      node = node.child;
+    }
+
+    if (node?.stateNode && !node.flags.has("Placement")) {
+      return node.stateNode;
+    }
+  }
+
+  return null;
+}
+
 function commitPlacement(fiber: Fiber): void {
   const parent = getHostParent(fiber);
   if (!parent) return;
 
+  const before = getHostSibling(fiber);
+
+  if (before) {
+    insertHostNode(parent, fiber, before);
+    return;
+  }
+
   appendHostNode(parent, fiber);
+}
+
+function insertHostNode(
+  parent: HTMLElement,
+  fiber: Fiber,
+  before: HTMLElement | Text,
+): void {
+  if (fiber.stateNode) {
+    parent.insertBefore(fiber.stateNode, before);
+    return;
+  }
+
+  for (let child = fiber.child; child; child = child.sibling) {
+    insertHostNode(parent, child, before);
+  }
 }
 
 function getHostParent(fiber: Fiber): HTMLElement | null {
