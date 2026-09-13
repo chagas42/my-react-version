@@ -154,13 +154,39 @@ export function appendChild(parent: Fiber, child: Fiber): Fiber {
   return child;
 }
 
+function cloneChildFibers(fiber: Fiber): void {
+  const current = fiber.alternate;
+  if (!current?.child) return;
+
+  let child: Fiber | null = current.child;
+  let previous: Fiber | null = null;
+
+  while (child) {
+    const clone = createWorkInProgress(child, child.pendingProps);
+    clone.return = fiber;
+
+    if (previous) {
+      previous.sibling = clone;
+    } else {
+      fiber.child = clone;
+    }
+
+    previous = clone;
+    child = child.sibling;
+  }
+}
+
 export function beginWork(fiber: Fiber): Fiber | null {
-  if (
-    fiber.alternate &&
-    fiber.lanes === NoLanes &&
-    fiber.childLanes === NoLanes
-  ) {
-    return null;
+  const sameProps = fiber.alternate?.memoizedProps === fiber.pendingProps;
+
+  if (fiber.alternate && sameProps && fiber.lanes === NoLanes) {
+    if (fiber.childLanes === NoLanes) {
+      fiber.child = fiber.alternate.child;
+      return null;
+    }
+
+    cloneChildFibers(fiber);
+    return fiber.child;
   }
 
   fiber.lanes = NoLanes;
@@ -179,36 +205,73 @@ export function reconcileChildren(
   returnFiber: Fiber,
   children: Component[],
 ): void {
+  const byKey = new Map<string | number, Fiber>();
+  const byPosition: Fiber[] = [];
+  const oldIndex = new Map<Fiber, number>();
+
+  let oldFiber = returnFiber.alternate?.child ?? null;
+  let index = 0;
+  while (oldFiber) {
+    oldIndex.set(oldFiber, index++);
+
+    if (oldFiber.key != null) {
+      byKey.set(oldFiber.key, oldFiber);
+    } else {
+      byPosition.push(oldFiber);
+    }
+    oldFiber = oldFiber.sibling;
+  }
+
+  const reused = new Set<Fiber>();
   let previousFiber: Fiber | null = null;
-  let oldFiber = returnFiber.alternate?.child || null;
+  let position = 0;
+  let lastPlaced = -1;
+
   returnFiber.child = null;
 
   for (const child of children) {
-    let newFiber = createFiberFromElement(child, returnFiber);
-    if (!newFiber) continue;
+    const created = createFiberFromElement(child, returnFiber);
+    if (!created) {
+      position += 1;
+      continue;
+    }
 
-    if (oldFiber && canReuseFiber(oldFiber, newFiber)) {
-      newFiber = createWorkInProgress(oldFiber, newFiber.pendingProps);
+    const candidate =
+      created.key != null ? byKey.get(created.key) : byPosition[position++];
+
+    let newFiber = created;
+
+    if (candidate && !reused.has(candidate) && canReuseFiber(candidate, created)) {
+      newFiber = createWorkInProgress(candidate, created.pendingProps);
       newFiber.return = returnFiber;
       newFiber.flags.add("Update");
+      reused.add(candidate);
+
+      const previousIndex = oldIndex.get(candidate) ?? 0;
+      if (previousIndex < lastPlaced) {
+        newFiber.flags.add("Placement");
+      } else {
+        lastPlaced = previousIndex;
+      }
     } else {
       newFiber.flags.add("Placement");
     }
 
-    if (!previousFiber) {
-      returnFiber.child = newFiber;
-    } else {
+    if (previousFiber) {
       previousFiber.sibling = newFiber;
+    } else {
+      returnFiber.child = newFiber;
     }
 
     previousFiber = newFiber;
-    oldFiber = oldFiber?.sibling || null;
   }
 
-  while (oldFiber) {
-    oldFiber.flags.add("Deletion");
-    returnFiber.deletions.push(oldFiber);
-    oldFiber = oldFiber.sibling;
+  if (previousFiber) previousFiber.sibling = null;
+
+  for (const old of [...byKey.values(), ...byPosition]) {
+    if (reused.has(old)) continue;
+    old.flags.add("Deletion");
+    returnFiber.deletions.push(old);
   }
 }
 
@@ -382,6 +445,9 @@ function commitDeletions(deletions: Fiber[]): void {
 function commitWork(fiber: Fiber | null): void {
   if (!fiber) return;
 
+  commitDeletions(fiber.deletions);
+  fiber.deletions = [];
+
   if (fiber.flags.has("Placement")) {
     commitPlacement(fiber);
   }
@@ -394,11 +460,57 @@ function commitWork(fiber: Fiber | null): void {
   commitWork(fiber.sibling);
 }
 
+function getHostSibling(fiber: Fiber): HTMLElement | Text | null {
+  let node: Fiber | null = fiber;
+
+  while (node) {
+    while (!node.sibling) {
+      node = node.return;
+      if (!node || node.stateNode instanceof HTMLElement) return null;
+    }
+
+    node = node.sibling;
+
+    while (node && !node.stateNode) {
+      if (node.flags.has("Placement")) break;
+      node = node.child;
+    }
+
+    if (node?.stateNode && !node.flags.has("Placement")) {
+      return node.stateNode;
+    }
+  }
+
+  return null;
+}
+
 function commitPlacement(fiber: Fiber): void {
   const parent = getHostParent(fiber);
   if (!parent) return;
 
+  const before = getHostSibling(fiber);
+
+  if (before) {
+    insertHostNode(parent, fiber, before);
+    return;
+  }
+
   appendHostNode(parent, fiber);
+}
+
+function insertHostNode(
+  parent: HTMLElement,
+  fiber: Fiber,
+  before: HTMLElement | Text,
+): void {
+  if (fiber.stateNode) {
+    parent.insertBefore(fiber.stateNode, before);
+    return;
+  }
+
+  for (let child = fiber.child; child; child = child.sibling) {
+    insertHostNode(parent, child, before);
+  }
 }
 
 function getHostParent(fiber: Fiber): HTMLElement | null {
