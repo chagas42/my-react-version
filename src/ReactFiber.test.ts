@@ -198,6 +198,63 @@ describe("fase de commit", () => {
   });
 });
 
+describe("reconciliação por key", () => {
+  const lista = (ids: number[]) =>
+    ids.map((id) => h("li", { key: id }, `item ${id}`));
+
+  function renderTwice(primeira: number[], segunda: number[]) {
+    const container = document.createElement("div");
+
+    const first = createHostRootFiber(container, lista(primeira));
+    renderFiberTree(first);
+
+    const second = createWorkInProgress(first, { children: lista(segunda) });
+    renderFiberTree(second);
+
+    return { first, second };
+  }
+
+  /** Os fibers filhos, em ordem, como lista. */
+  function filhos(fiber: Fiber): Fiber[] {
+    const out: Fiber[] = [];
+    for (let c = fiber.child; c; c = c.sibling) out.push(c);
+    return out;
+  }
+
+  it("reencontra o fiber da key mesmo fora de ordem", () => {
+    const { first, second } = renderTwice([1, 2, 3], [3, 1, 2]);
+
+    const antes = filhos(first);
+    const depois = filhos(second);
+
+    expect(depois.map((f) => f.key)).toEqual([3, 1, 2]);
+    // o fiber da key 3 é o mesmo de antes, reusado — não um recém-criado
+    expect(depois[0].alternate).toBe(antes[2]);
+    expect(depois[0].flags.has("Update")).toBe(true);
+  });
+
+  it("reusa o nó de DOM ao reordenar", () => {
+    const { first, second } = renderTwice([1, 2, 3], [3, 1, 2]);
+
+    expect(filhos(second)[0].stateNode).toBe(filhos(first)[2].stateNode);
+  });
+
+  it("marca Placement só em quem é novo", () => {
+    const { second } = renderTwice([1, 2], [1, 2, 3]);
+
+    const depois = filhos(second);
+    expect(depois[0].flags.has("Update")).toBe(true);
+    expect(depois[1].flags.has("Update")).toBe(true);
+    expect(depois[2].flags.has("Placement")).toBe(true);
+  });
+
+  it("marca Deletion em quem saiu, mesmo fora de ordem", () => {
+    const { second } = renderTwice([1, 2, 3], [3, 1]);
+
+    expect(second.deletions.map((f) => f.key)).toEqual([2]);
+  });
+});
+
 describe("reconciliação por posição", () => {
   it("reusa o fiber quando o tipo casa, e marca Update", () => {
     const container = document.createElement("div");
