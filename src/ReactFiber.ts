@@ -1,3 +1,4 @@
+import { flushPassiveEffects, renderWithHooks } from "./ReactFiberHooks";
 import type { Component, Props } from "./types";
 
 export type Lane = number;
@@ -17,6 +18,8 @@ export type Fiber = {
   childLanes: Lane;
   pendingProps: Props;
   memoizedProps: Props | null;
+  /** Lista encadeada de hooks deste fiber. Ver ReactFiberHooks. */
+  memoizedState: unknown;
   stateNode: HTMLElement | Text | null;
   alternate: Fiber | null;
   flags: Set<EffectFlag>;
@@ -43,6 +46,7 @@ export function createFiber(
     childLanes: NoLanes,
     pendingProps,
     memoizedProps: null,
+    memoizedState: null,
     stateNode: null,
     alternate: null,
     flags: new Set(),
@@ -142,6 +146,7 @@ export function createWorkInProgress(
   workInProgress.lanes = current.lanes;
   workInProgress.childLanes = current.childLanes;
   workInProgress.memoizedProps = current.memoizedProps;
+  workInProgress.memoizedState = current.memoizedState;
   return workInProgress;
 }
 
@@ -367,6 +372,10 @@ export function commitFiberTree(root: Fiber): void {
 
   commitDeletions(root.deletions);
   commitWork(root.child);
+
+  // efeitos rodam depois do commit: eles podem ler o DOM, e antes do commit
+  // o DOM ainda não reflete esta render.
+  flushPassiveEffects();
 }
 
 /**
@@ -439,11 +448,11 @@ function getFiberChildren(fiber: Fiber): Component[] {
 function updateFunctionComponent(fiber: Fiber): void {
   if (typeof fiber.type !== "function") return;
 
-  const children = fiber.type(fiber.pendingProps) as
-    | Component
-    | Component[]
-    | null
-    | undefined;
+  const children = renderWithHooks(
+    fiber,
+    fiber.type as (props: Props) => Component | Component[] | null | undefined,
+    fiber.pendingProps,
+  );
 
   reconcileChildren(fiber, normalizeChildren(children));
 }
