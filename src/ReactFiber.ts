@@ -138,11 +138,21 @@ export function appendChild(parent: Fiber, child: Fiber): Fiber {
 }
 
 export function beginWork(fiber: Fiber): Fiber | null {
-  if (fiber.lanes === NoLanes && fiber.childLanes === NoLanes) {
+  if (
+    fiber.alternate &&
+    fiber.lanes === NoLanes &&
+    fiber.childLanes === NoLanes
+  ) {
     return null;
   }
 
   fiber.lanes = NoLanes;
+
+  if (fiber.tag === "FunctionComponent") {
+    updateFunctionComponent(fiber);
+    return fiber.child;
+  }
+
   reconcileChildren(fiber, getFiberChildren(fiber));
   return fiber.child;
 }
@@ -202,6 +212,12 @@ export function workLoop(root: Fiber): void {
   }
 }
 
+export function renderFiberTree(root: Fiber): Fiber {
+  root.lanes = mergeLanes(root.lanes, SyncLane);
+  workLoop(root);
+  return root;
+}
+
 export function scheduleUpdateOnFiber(fiber: Fiber, lane: Lane = SyncLane) {
   const root = markUpdateLaneFromFiberToRoot(fiber, lane);
 
@@ -253,6 +269,27 @@ function getFiberChildren(fiber: Fiber): Component[] {
 
   const children = fiber.pendingProps.children;
 
+  if (!children) return [];
+  if (Array.isArray(children)) return children;
+
+  return [children];
+}
+
+function updateFunctionComponent(fiber: Fiber): void {
+  if (typeof fiber.type !== "function") return;
+
+  const children = fiber.type(fiber.pendingProps) as
+    | Component
+    | Component[]
+    | null
+    | undefined;
+
+  reconcileChildren(fiber, normalizeChildren(children));
+}
+
+function normalizeChildren(
+  children: Component | Component[] | null | undefined,
+): Component[] {
   if (!children) return [];
   if (Array.isArray(children)) return children;
 
