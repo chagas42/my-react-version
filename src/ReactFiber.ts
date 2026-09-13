@@ -220,36 +220,61 @@ export function reconcileChildren(
   returnFiber: Fiber,
   children: Component[],
 ): void {
+  // Quem tem key é procurado pela key; quem não tem, pela posição. É o que
+  // permite reordenar uma lista sem destruir e recriar cada nó: o fiber da
+  // key 3 é reencontrado mesmo tendo saído do fim para o começo.
+  const byKey = new Map<string | number, Fiber>();
+  const byPosition: Fiber[] = [];
+
+  let oldFiber = returnFiber.alternate?.child ?? null;
+  while (oldFiber) {
+    if (oldFiber.key != null) {
+      byKey.set(oldFiber.key, oldFiber);
+    } else {
+      byPosition.push(oldFiber);
+    }
+    oldFiber = oldFiber.sibling;
+  }
+
+  const reused = new Set<Fiber>();
   let previousFiber: Fiber | null = null;
-  let oldFiber = returnFiber.alternate?.child || null;
+  let position = 0;
+
   returnFiber.child = null;
 
   for (const child of children) {
-    let newFiber = createFiberFromElement(child, returnFiber);
-    if (!newFiber) continue;
+    const created = createFiberFromElement(child, returnFiber);
+    if (!created) continue;
 
-    if (oldFiber && canReuseFiber(oldFiber, newFiber)) {
-      newFiber = createWorkInProgress(oldFiber, newFiber.pendingProps);
+    const candidate =
+      created.key != null ? byKey.get(created.key) : byPosition[position++];
+
+    let newFiber = created;
+
+    if (candidate && !reused.has(candidate) && canReuseFiber(candidate, created)) {
+      newFiber = createWorkInProgress(candidate, created.pendingProps);
       newFiber.return = returnFiber;
       newFiber.flags.add("Update");
+      reused.add(candidate);
     } else {
       newFiber.flags.add("Placement");
     }
 
-    if (!previousFiber) {
-      returnFiber.child = newFiber;
-    } else {
+    if (previousFiber) {
       previousFiber.sibling = newFiber;
+    } else {
+      returnFiber.child = newFiber;
     }
 
     previousFiber = newFiber;
-    oldFiber = oldFiber?.sibling || null;
   }
 
-  while (oldFiber) {
-    oldFiber.flags.add("Deletion");
-    returnFiber.deletions.push(oldFiber);
-    oldFiber = oldFiber.sibling;
+  if (previousFiber) previousFiber.sibling = null;
+
+  for (const old of [...byKey.values(), ...byPosition]) {
+    if (reused.has(old)) continue;
+    old.flags.add("Deletion");
+    returnFiber.deletions.push(old);
   }
 }
 
