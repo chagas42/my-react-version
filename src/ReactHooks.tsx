@@ -1,14 +1,25 @@
 import React from "./React";
 import ReactDOM from "./ReactDOM";
+import * as fiberHooks from "./ReactFiberHooks";
+import { isRenderingWithFiber } from "./ReactFiberHooks";
 import type { Children } from "./types";
+
+/**
+ * Cada hook tem duas implementações: a do reconciler antigo, que guarda estado
+ * num HookNode achado por id hasheado, e a do fiber, que guarda no próprio
+ * fiber. `isRenderingWithFiber()` diz qual árvore está sendo renderizada agora
+ * — os dois reconcilers convivem, então a escolha é por render, não por build.
+ */
 
 type State<T> = T | (() => T);
 type UpdateFunction<T> = (prevState: T) => T;
-type Callback = () => undefined | (() => void);
+type Callback = () => void | (() => void);
 
 export function useState<T>(
   initialState: State<T>
 ): readonly [T, (newState: T | ((prevState: T) => T)) => void] {
+  if (isRenderingWithFiber()) return fiberHooks.useState(initialState) as never;
+
   const hookIndex = React.getHookIndex();
   let [state, hookNode] = React.getStateForIndex<T>(hookIndex);
 
@@ -34,6 +45,8 @@ export function useState<T>(
 }
 
 export function useEffect(callback: Callback, dependencies: unknown[]) {
+  if (isRenderingWithFiber()) return fiberHooks.useEffect(callback, dependencies);
+
   const hookIndex = React.getHookIndex();
   const [prevState, hookNode] = React.getStateForIndex<
     [unknown[], ReturnType<Callback> | undefined, boolean]
@@ -71,6 +84,8 @@ function dependenciesChanged(
 }
 
 export function useRef<T>(initialValue: T) {
+  if (isRenderingWithFiber()) return fiberHooks.useRef(initialValue);
+
   const hookIndex = React.getHookIndex();
   let [ref, hookNode] = React.getStateForIndex(hookIndex);
 
@@ -98,6 +113,8 @@ export function useReducer<T, A>(
   reducer: (state: T, action: A) => T,
   initialState: T
 ): [T, (action: A) => void] {
+  if (isRenderingWithFiber()) return fiberHooks.useReducer(reducer, initialState) as never;
+
   const hookIndex = React.getHookIndex();
   let [state, hookNode] = React.getStateForIndex<T>(hookIndex);
 
@@ -117,6 +134,8 @@ export function useReducer<T, A>(
 }
 
 export function useMemo<T>(factory: () => T, dependencies: unknown[]): T {
+  if (isRenderingWithFiber()) return fiberHooks.useMemo(factory, dependencies);
+
   const hookIndex = React.getHookIndex();
   const [prevState, hookNode] =
     React.getStateForIndex<[unknown[], T]>(hookIndex);
