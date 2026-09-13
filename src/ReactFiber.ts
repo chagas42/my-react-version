@@ -181,12 +181,20 @@ export function reconcileChildren(
   children: Component[],
 ): void {
   let previousFiber: Fiber | null = null;
+  let oldFiber = returnFiber.alternate?.child || null;
   returnFiber.child = null;
 
   for (const child of children) {
-    const newFiber = createFiberFromElement(child, returnFiber);
+    let newFiber = createFiberFromElement(child, returnFiber);
     if (!newFiber) continue;
-    newFiber.flags.add("Placement");
+
+    if (oldFiber && canReuseFiber(oldFiber, newFiber)) {
+      newFiber = createWorkInProgress(oldFiber, newFiber.pendingProps);
+      newFiber.return = returnFiber;
+      newFiber.flags.add("Update");
+    } else {
+      newFiber.flags.add("Placement");
+    }
 
     if (!previousFiber) {
       returnFiber.child = newFiber;
@@ -195,6 +203,13 @@ export function reconcileChildren(
     }
 
     previousFiber = newFiber;
+    oldFiber = oldFiber?.sibling || null;
+  }
+
+  while (oldFiber) {
+    oldFiber.flags.add("Deletion");
+    returnFiber.deletions.push(oldFiber);
+    oldFiber = oldFiber.sibling;
   }
 }
 
@@ -263,8 +278,8 @@ export function commitFiberTree(root: Fiber): void {
     return;
   }
 
-  root.stateNode.replaceChildren();
-  appendHostChildren(root.stateNode, root.child);
+  commitDeletions(root.deletions);
+  commitWork(root.child);
 }
 
 export function scheduleUpdateOnFiber(fiber: Fiber, lane: Lane = SyncLane) {
@@ -359,6 +374,93 @@ function appendHostChildren(parent: HTMLElement, child: Fiber | null): void {
   }
 }
 
+function commitDeletions(deletions: Fiber[]): void {
+  for (const fiber of deletions) {
+    commitDeletion(fiber);
+  }
+}
+
+function commitWork(fiber: Fiber | null): void {
+  if (!fiber) return;
+
+  if (fiber.flags.has("Placement")) {
+    commitPlacement(fiber);
+  }
+
+  if (fiber.flags.has("Update")) {
+    commitUpdate(fiber);
+  }
+
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}
+
+function commitPlacement(fiber: Fiber): void {
+  const parent = getHostParent(fiber);
+  if (!parent) return;
+
+  appendHostNode(parent, fiber);
+}
+
+function getHostParent(fiber: Fiber): HTMLElement | null {
+  let parent = fiber.return;
+
+  while (parent) {
+    if (parent.stateNode instanceof HTMLElement) {
+      return parent.stateNode;
+    }
+
+    parent = parent.return;
+  }
+
+  return null;
+}
+
+function appendHostNode(parent: HTMLElement, fiber: Fiber): void {
+  if (fiber.stateNode) {
+    parent.appendChild(fiber.stateNode);
+    return;
+  }
+
+  appendHostChildren(parent, fiber.child);
+}
+
+function commitUpdate(fiber: Fiber): void {
+  if (fiber.tag === "HostText" && fiber.stateNode instanceof Text) {
+    updateHostText(fiber);
+    return;
+  }
+
+  if (fiber.tag === "HostComponent" && fiber.stateNode instanceof HTMLElement) {
+    updateHostProps(
+      fiber.stateNode,
+      fiber.alternate?.memoizedProps || {},
+      fiber.pendingProps,
+    );
+  }
+}
+
+function updateHostText(fiber: Fiber): void {
+  if (!(fiber.stateNode instanceof Text)) return;
+
+  const nextValue = fiber.pendingProps.nodeValue?.toString() || "";
+
+  if (fiber.stateNode.nodeValue !== nextValue) {
+    fiber.stateNode.nodeValue = nextValue;
+  }
+}
+
+function commitDeletion(fiber: Fiber): void {
+  if (fiber.stateNode?.parentNode) {
+    fiber.stateNode.parentNode.removeChild(fiber.stateNode);
+    return;
+  }
+
+  if (fiber.child) {
+    commitDeletion(fiber.child);
+  }
+}
+
 function setInitialHostProps(element: HTMLElement, props: Props): void {
   for (const key of Object.keys(props)) {
     const value = props[key];
@@ -403,6 +505,58 @@ function setInitialHostProps(element: HTMLElement, props: Props): void {
   }
 }
 
+function updateHostProps(
+  element: HTMLElement,
+  oldProps: Props,
+  newProps: Props,
+): void {
+  removeOldHostProps(element, oldProps, newProps);
+  setInitialHostProps(element, newProps);
+}
+
+function removeOldHostProps(
+  element: HTMLElement,
+  oldProps: Props,
+  newProps: Props,
+): void {
+  for (const key of Object.keys(oldProps)) {
+    const value = oldProps[key];
+
+    if (key === "children" || key === "__self" || key === "__source") {
+      continue;
+    }
+
+    if (key.startsWith("on") && typeof value === "function") {
+      element.removeEventListener(key.toLowerCase().substring(2), value);
+      continue;
+    }
+
+    if (key === "style") {
+      removeOldStyle(element, value, newProps.style);
+      continue;
+    }
+
+    if (key === "className" && newProps.className == null) {
+      element.className = "";
+      continue;
+    }
+
+    if (key === "ref" && typeof value === "object" && "current" in value) {
+      value.current = null;
+      continue;
+    }
+
+    if (typeof value === "boolean" && newProps[key] !== true) {
+      element.removeAttribute(key.toLowerCase());
+      continue;
+    }
+
+    if (!(key in newProps)) {
+      element.removeAttribute(key.toLowerCase());
+    }
+  }
+}
+
 function setInitialStyle(element: HTMLElement, style: unknown): void {
   if (typeof style === "string") {
     element.style.cssText = style;
@@ -414,4 +568,33 @@ function setInitialStyle(element: HTMLElement, style: unknown): void {
   for (const key of Object.keys(style)) {
     element.style[key] = style[key];
   }
+}
+
+function removeOldStyle(
+  element: HTMLElement,
+  oldStyle: unknown,
+  newStyle: unknown,
+): void {
+  if (!newStyle) {
+    element.removeAttribute("style");
+    return;
+  }
+
+  if (
+    !oldStyle ||
+    typeof oldStyle !== "object" ||
+    typeof newStyle !== "object"
+  ) {
+    return;
+  }
+
+  for (const key of Object.keys(oldStyle)) {
+    if (!(key in newStyle)) {
+      element.style[key] = "";
+    }
+  }
+}
+
+function canReuseFiber(current: Fiber, next: Fiber): boolean {
+  return current.type === next.type && current.key === next.key;
 }
