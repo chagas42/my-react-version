@@ -69,6 +69,27 @@ describe("parity between reconcilers", () => {
     expect(fiber).toBe(legacy);
   });
 
+  it("re-rendering does not duplicate the tree", () => {
+    const fiber = document.createElement("div");
+
+    ReactDOM.renderRootWithFiber((<p>um</p>) as never, fiber);
+    ReactDOM.renderRootWithFiber((<p>dois</p>) as never, fiber);
+
+    expect(fiber.children.length).toBe(1);
+    expect(fiber.textContent).toBe("dois");
+  });
+
+  it("re-rendering keeps the same DOM node", () => {
+    const fiber = document.createElement("div");
+
+    ReactDOM.renderRootWithFiber((<p>um</p>) as never, fiber);
+    const before = fiber.firstElementChild;
+
+    ReactDOM.renderRootWithFiber((<p>dois</p>) as never, fiber);
+
+    expect(fiber.firstElementChild).toBe(before);
+  });
+
   it("wires event handlers", () => {
     let clicks = 0;
     const fiberContainer = document.createElement("div");

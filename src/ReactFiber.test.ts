@@ -123,6 +123,11 @@ describe("commit phase", () => {
     expect(container.innerHTML).toBe('<div id="a"><span>oi</span></div>');
   });
 
+  it("consumes the flags on commit", () => {
+    const { root } = render(h("div", {}, h("span")));
+
+    expect([...root.child!.flags]).toEqual([]);
+  });
 });
 
 describe("keyed reconciliation", () => {

@@ -39,7 +39,7 @@ function ReactDOM() {
 
     _root = root;
     _container = container;
-    _fiberRoot = renderFiberRoot(root, container);
+    _fiberRoot = renderFiberRoot(root, container, _fiberRoot);
 
     return _fiberRoot;
   }

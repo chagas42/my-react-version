@@ -1,4 +1,4 @@
-import { NORMAL, scheduleCallback } from "./scheduler";
+import { flushPassiveEffects, renderWithHooks } from "./ReactFiberHooks";
 import type { Component, Props } from "./types";
 
 export type Lane = number;
@@ -18,6 +18,7 @@ export type Fiber = {
   childLanes: Lane;
   pendingProps: Props;
   memoizedProps: Props | null;
+  memoizedState: unknown;
   stateNode: HTMLElement | Text | null;
   alternate: Fiber | null;
   flags: Set<EffectFlag>;
@@ -44,6 +45,7 @@ export function createFiber(
     childLanes: NoLanes,
     pendingProps,
     memoizedProps: null,
+    memoizedState: null,
     stateNode: null,
     alternate: null,
     flags: new Set(),
@@ -66,8 +68,14 @@ export function createHostRootFiber(
 export function renderFiberRoot(
   rootComponent: Component,
   container: HTMLElement,
+  previous: Fiber | null = null,
 ): Fiber {
-  const root = createHostRootFiber(container, [rootComponent]);
+  const root = previous
+    ? createWorkInProgress(previous, { children: [rootComponent] })
+    : createHostRootFiber(container, [rootComponent]);
+
+  root.stateNode = container;
+
   renderFiberTree(root);
   commitFiberTree(root);
   return root;
@@ -134,6 +142,7 @@ export function createWorkInProgress(
   workInProgress.lanes = current.lanes;
   workInProgress.childLanes = current.childLanes;
   workInProgress.memoizedProps = current.memoizedProps;
+  workInProgress.memoizedState = current.memoizedState;
   return workInProgress;
 }
 
@@ -342,15 +351,18 @@ export function commitFiberTree(root: Fiber): void {
 
   commitDeletions(root.deletions);
   commitWork(root.child);
+
+  flushPassiveEffects();
 }
 
 export function scheduleUpdateOnFiber(fiber: Fiber, lane: Lane = SyncLane) {
-  const root = markUpdateLaneFromFiberToRoot(fiber, lane);
+  const current = markUpdateLaneFromFiberToRoot(fiber, lane);
+  const root = createWorkInProgress(current, current.pendingProps);
+  root.stateNode = current.stateNode;
 
-  scheduleCallback({
-    priorityLevel: NORMAL,
-    callback: () => workLoop(root),
-  });
+  renderFiberTree(root);
+  commitFiberTree(root);
+  return root;
 }
 
 function markUpdateLaneFromFiberToRoot(fiber: Fiber, lane: Lane): Fiber {
@@ -404,11 +416,11 @@ function getFiberChildren(fiber: Fiber): Component[] {
 function updateFunctionComponent(fiber: Fiber): void {
   if (typeof fiber.type !== "function") return;
 
-  const children = fiber.type(fiber.pendingProps) as
-    | Component
-    | Component[]
-    | null
-    | undefined;
+  const children = renderWithHooks(
+    fiber,
+    fiber.type as (props: Props) => Component | Component[] | null | undefined,
+    fiber.pendingProps,
+  );
 
   reconcileChildren(fiber, normalizeChildren(children));
 }
@@ -455,6 +467,8 @@ function commitWork(fiber: Fiber | null): void {
   if (fiber.flags.has("Update")) {
     commitUpdate(fiber);
   }
+
+  fiber.flags.clear();
 
   commitWork(fiber.child);
   commitWork(fiber.sibling);
