@@ -1,4 +1,6 @@
 import { flushPassiveEffects, renderWithHooks } from "./ReactFiberHooks";
+import { NORMAL, scheduleCallback, shouldYieldToHost } from "./scheduler";
+import type { TaskCallback } from "./scheduler";
 import type { Component, Props } from "./types";
 
 export type Lane = number;
@@ -330,18 +332,49 @@ export function performUnitOfWork(fiber: Fiber): Fiber | null {
   return null;
 }
 
-export function workLoop(root: Fiber): void {
+const runToCompletion = () => false;
+
+export function workLoop(
+  root: Fiber,
+  shouldYield: () => boolean = runToCompletion,
+): Fiber | null {
   let nextUnitOfWork: Fiber | null = root;
 
-  while (nextUnitOfWork) {
+  do {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
-  }
+  } while (nextUnitOfWork && !shouldYield());
+
+  return nextUnitOfWork;
 }
 
 export function renderFiberTree(root: Fiber): Fiber {
   root.lanes = mergeLanes(root.lanes, SyncLane);
   workLoop(root);
   return root;
+}
+
+export function renderFiberTreeConcurrent(
+  root: Fiber,
+  onCommitted?: (root: Fiber) => void,
+  shouldYield: () => boolean = shouldYieldToHost,
+): void {
+  root.lanes = mergeLanes(root.lanes, SyncLane);
+
+  const sliceFrom = (from: Fiber): TaskCallback => {
+    return () => {
+      const next = workLoop(from, shouldYield);
+
+      if (!next) {
+        commitFiberTree(root);
+        onCommitted?.(root);
+        return;
+      }
+
+      return sliceFrom(next);
+    };
+  };
+
+  scheduleCallback({ priorityLevel: NORMAL, callback: sliceFrom(root) });
 }
 
 export function commitFiberTree(root: Fiber): void {
