@@ -191,11 +191,22 @@ describe("fase de commit", () => {
   });
 
   it("marca Placement em cada fiber novo", () => {
-    const { root } = render(h("div", {}, h("span")));
+    const container = document.createElement("div");
+    const root = createHostRootFiber(container, [h("div", {}, h("span"))]);
+
+    renderFiberTree(root); // sem commit: as flags ainda não foram consumidas
 
     const div = root.child!;
     expect(div.flags.has("Placement")).toBe(true);
     expect(div.child!.flags.has("Placement")).toBe(true);
+  });
+
+  it("consome as flags ao commitar", () => {
+    const { root } = render(h("div", {}, h("span")));
+
+    // um fiber pulado por bailout é compartilhado entre as duas árvores.
+    // se as flags sobrevivessem, ele seria reinserido na render seguinte.
+    expect([...root.child!.flags]).toEqual([]);
   });
 });
 
