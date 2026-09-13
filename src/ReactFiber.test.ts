@@ -151,6 +151,37 @@ describe("fase de render", () => {
   });
 });
 
+describe("bailout", () => {
+  it("preserva a subárvore ao pular um fiber sem trabalho", () => {
+    const container = document.createElement("div");
+    const props = { children: [h("div", {}, h("span"))] };
+
+    const first = createHostRootFiber(container, props.children);
+    renderFiberTree(first);
+
+    // mesmos props, nenhuma lane: o root não tem o que fazer
+    const second = createWorkInProgress(first, first.memoizedProps ?? props);
+    renderFiberTree(second);
+
+    // a subárvore continua alcançável — pular não é descartar
+    expect(second.child).not.toBeNull();
+  });
+
+  it("desce quando os props mudaram", () => {
+    const container = document.createElement("div");
+
+    const first = createHostRootFiber(container, [h("div", { id: "a" })]);
+    renderFiberTree(first);
+
+    const second = createWorkInProgress(first, {
+      children: [h("div", { id: "b" })],
+    });
+    renderFiberTree(second);
+
+    expect(second.child!.pendingProps.id).toBe("b");
+  });
+});
+
 describe("fase de commit", () => {
   it("põe a árvore no container", () => {
     const { container } = render(h("div", { id: "a" }, h("span", {}, "oi")));
@@ -183,10 +214,7 @@ describe("reconciliação por posição", () => {
     expect(reused.flags.has("Update")).toBe(true);
   });
 
-  // BUG: o bailout em beginWork devolve null em vez de clonar os filhos, então
-  // a subárvore inteira some da work-in-progress tree e nada dentro dela é
-  // reconciliado. Vira `it` quando o bailout clonar os filhos.
-  it.fails("marca Deletion nos filhos que sobraram", () => {
+  it("marca Deletion nos filhos que sobraram", () => {
     const container = document.createElement("div");
     const first = createHostRootFiber(container, [
       h("div", {}, h("span"), h("b")),
