@@ -164,7 +164,9 @@ export function beginWork(fiber: Fiber): Fiber | null {
   }
 
   fiber.lanes = NoLanes;
-  fiber.flags.clear();
+  // as flags deste fiber foram marcadas pelo reconcileChildren do PAI e são
+  // lidas na fase de commit. limpá-las aqui as apagaria antes do commit ver.
+  // quem zera é o createWorkInProgress, ao reusar o fiber para a próxima render.
   fiber.deletions = [];
 
   if (fiber.tag === "FunctionComponent") {

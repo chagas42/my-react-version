@@ -152,18 +152,13 @@ describe("fase de render", () => {
 });
 
 describe("fase de commit", () => {
-  // BUG: beginWork faz `fiber.flags.clear()` logo na entrada, apagando o
-  // Placement que o reconcileChildren do PAI acabou de marcar. Nenhuma flag
-  // sobrevive até o commit, então commitWork não faz nada e o container fica
-  // vazio. É o que impede o fiber path inteiro de renderizar.
-  // Vira `it` quando a limpeza sair de beginWork.
-  it.fails("põe a árvore no container", () => {
+  it("põe a árvore no container", () => {
     const { container } = render(h("div", { id: "a" }, h("span", {}, "oi")));
 
     expect(container.innerHTML).toBe('<div id="a"><span>oi</span></div>');
   });
 
-  it.fails("marca Placement em cada fiber novo", () => {
+  it("marca Placement em cada fiber novo", () => {
     const { root } = render(h("div", {}, h("span")));
 
     const div = root.child!;
