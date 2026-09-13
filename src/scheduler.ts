@@ -82,7 +82,8 @@ function performWorkUntilDeadline() {
   }
 }
 
-function workLoop(initialTimer: number): boolean {
+/** Roda tasks da fila até acabar o tempo do frame ou a fila. */
+function flushTaskQueue(initialTimer: number): boolean {
   let currentTask = TASKQUEUE[0];
   let currentTime = initialTimer;
 
@@ -110,14 +111,14 @@ function workLoop(initialTimer: number): boolean {
 }
 
 function flushWork(initialTimer: number): boolean {
-  return workLoop(initialTimer);
+  return flushTaskQueue(initialTimer);
 }
 
 function schedulePerformWorkUntilDeadline() {
   setTimeout(performWorkUntilDeadline, 0);
 }
 
-function shouldYieldToHost() {
+export function shouldYieldToHost() {
   const timeElapsed = performance.now() - startTimer;
 
   if (timeElapsed < FRAME_INTERVAL) {

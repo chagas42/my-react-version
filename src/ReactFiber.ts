@@ -1,4 +1,6 @@
 import { flushPassiveEffects, renderWithHooks } from "./ReactFiberHooks";
+import { NORMAL, scheduleCallback, shouldYieldToHost } from "./scheduler";
+import type { TaskCallback } from "./scheduler";
 import type { Component, Props } from "./types";
 
 export type Lane = number;
@@ -351,18 +353,71 @@ export function performUnitOfWork(fiber: Fiber): Fiber | null {
   return null;
 }
 
-export function workLoop(root: Fiber): void {
+/** Nunca cede: o laço vai até o fim numa tacada só. */
+const runToCompletion = () => false;
+
+/**
+ * Processa fibers um a um e devolve onde parou.
+ *
+ * `shouldYield` entra por parâmetro em vez de ser lido de um relógio global —
+ * é o que torna a interrupção testável: um teste passa `() => true` e recebe
+ * de volta a próxima unidade de trabalho, sem depender de timing real.
+ *
+ * O predicado é consultado DEPOIS de cada unidade, então toda chamada avança
+ * pelo menos um fiber. Consultar antes poderia devolver o mesmo ponto para
+ * sempre e travar o laço.
+ *
+ * Devolve `null` quando terminou a árvore, ou o próximo fiber quando cedeu.
+ */
+export function workLoop(
+  root: Fiber,
+  shouldYield: () => boolean = runToCompletion,
+): Fiber | null {
   let nextUnitOfWork: Fiber | null = root;
 
-  while (nextUnitOfWork) {
+  do {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
-  }
+  } while (nextUnitOfWork && !shouldYield());
+
+  return nextUnitOfWork;
 }
 
 export function renderFiberTree(root: Fiber): Fiber {
   root.lanes = mergeLanes(root.lanes, SyncLane);
   workLoop(root);
   return root;
+}
+
+/**
+ * Renderiza em fatias, cedendo o controle ao host entre elas.
+ *
+ * Cada fatia devolve uma continuação — a função que retoma do ponto exato onde
+ * parou. O scheduler reagenda essa continuação, e o commit só acontece quando
+ * a árvore inteira terminou: uma render pela metade nunca chega ao DOM.
+ */
+export function renderFiberTreeConcurrent(
+  root: Fiber,
+  onComplete: (root: Fiber) => void,
+  shouldYield: () => boolean = shouldYieldToHost,
+): void {
+  root.lanes = mergeLanes(root.lanes, SyncLane);
+
+  const sliceFrom = (from: Fiber): TaskCallback => {
+    return () => {
+      const next = workLoop(from, shouldYield);
+
+      if (!next) {
+        onComplete(root);
+        return;
+      }
+
+      // devolver uma função é o contrato do scheduler para "ainda tem trabalho":
+      // ele guarda esta continuação e a chama no próximo frame.
+      return sliceFrom(next);
+    };
+  };
+
+  scheduleCallback({ priorityLevel: NORMAL, callback: sliceFrom(root) });
 }
 
 export function commitFiberTree(root: Fiber): void {
